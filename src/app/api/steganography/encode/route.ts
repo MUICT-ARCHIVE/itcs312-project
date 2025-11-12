@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
       const filenameLengthBuffer = Buffer.alloc(4);
       filenameLengthBuffer.writeUInt32BE(filenameBuffer.length, 0);
       
-      // Format: [filename length (4 bytes)][filename][file data]
       dataToEncode = Buffer.concat([filenameLengthBuffer, filenameBuffer, fileBuffer]);
       dataSize = dataToEncode.length;
     }

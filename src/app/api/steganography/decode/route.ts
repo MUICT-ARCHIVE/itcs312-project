@@ -39,14 +39,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (mode === 'text') {
-      // Text mode - convert buffer to string
+      // Convert buffer to string
       const message = new TextDecoder().decode(decodedData);
       return NextResponse.json({
         message: message,
         success: true
       });
     } else {
-      // File mode - extract filename and file data
+      // Extract filename and file data
       try {
         const dataBuffer = decodedData as Buffer;
         
