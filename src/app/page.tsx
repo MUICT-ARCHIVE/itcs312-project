@@ -182,7 +182,32 @@ export default function Home() {
     setDecodedFile(null);
 
     try {
-      // Try file mode first (since files are more common)
+      // Try text mode first
+      const textFormData = new FormData();
+      textFormData.append('image', decodeImage);
+      textFormData.append('mode', 'text');
+      if (password) {
+        textFormData.append('password', password);
+      }
+
+      let response = await fetch('/api/steganography/decode', {
+        method: 'POST',
+        body: textFormData,
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('Content-Type');
+        
+        if (contentType?.includes('application/json')) {
+          const data = await response.json();
+          setDecodedMessage(data.message);
+          setPassword('');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If text mode failed, try file mode
       const fileFormData = new FormData();
       fileFormData.append('image', decodeImage);
       fileFormData.append('mode', 'file');
@@ -190,7 +215,7 @@ export default function Home() {
         fileFormData.append('password', password);
       }
 
-      let response = await fetch('/api/steganography/decode', {
+      response = await fetch('/api/steganography/decode', {
         method: 'POST',
         body: fileFormData,
       });
@@ -232,32 +257,10 @@ export default function Home() {
           return;
         }
       }
-
-      // If file mode didn't work, try text mode
-      const textFormData = new FormData();
-      textFormData.append('image', decodeImage);
-      textFormData.append('mode', 'text');
-      if (password) {
-        textFormData.append('password', password);
-      }
-
-      response = await fetch('/api/steganography/decode', {
-        method: 'POST',
-        body: textFormData,
-      });
-
-      if (response.ok) {
-        const contentType = response.headers.get('Content-Type');
-        
-        if (contentType?.includes('application/json')) {
-          const data = await response.json();
-          setDecodedMessage(data.message);
-          setPassword('');
-        }
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Failed to decode');
-      }
+      
+      // Both modes failed
+      const data = await response.json();
+      setError(data.error || 'Failed to decode');
     } catch (err) {
       console.error('Decode error:', err);
       setError('An error occurred while decoding');
