@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [decodedMessage, setDecodedMessage] = useState('');
   const [decodedFile, setDecodedFile] = useState<{blob: Blob, filename: string} | null>(null);
+  const [decodedImageUrl, setDecodedImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [encodedBlob, setEncodedBlob] = useState<Blob | null>(null);
@@ -35,6 +36,23 @@ export default function Home() {
     width: number;
     height: number;
   } | null>(null);
+
+  // Cleanup decoded image URL when component unmounts or decodedFile changes
+  useEffect(() => {
+    if (decodedFile?.blob.type.startsWith('image/')) {
+      const url = URL.createObjectURL(decodedFile.blob);
+      console.log('Created blob URL for image:', url, 'MIME type:', decodedFile.blob.type);
+      setDecodedImageUrl(url);
+      
+      return () => {
+        console.log('Cleaning up blob URL:', url);
+        URL.revokeObjectURL(url);
+        setDecodedImageUrl(null);
+      };
+    } else {
+      setDecodedImageUrl(null);
+    }
+  }, [decodedFile]);
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -164,16 +182,68 @@ export default function Home() {
     setDecodedFile(null);
 
     try {
-      const formData = new FormData();
-      formData.append('image', decodeImage);
-      formData.append('mode', 'file');
+      // Try file mode first (since files are more common)
+      const fileFormData = new FormData();
+      fileFormData.append('image', decodeImage);
+      fileFormData.append('mode', 'file');
       if (password) {
-        formData.append('password', password);
+        fileFormData.append('password', password);
       }
 
       let response = await fetch('/api/steganography/decode', {
         method: 'POST',
-        body: formData,
+        body: fileFormData,
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('Content-Type');
+        
+        // If it's a file download
+        if (contentType?.includes('application/octet-stream')) {
+          const responseBlob = await response.blob();
+          const filename = response.headers.get('X-Original-Filename') || 'decoded-file';
+          
+          // Infer MIME type from filename extension
+          let mimeType = responseBlob.type || contentType || 'application/octet-stream';
+          const ext = filename.toLowerCase().split('.').pop();
+          const mimeMap: { [key: string]: string } = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'bmp': 'image/bmp',
+            'webp': 'image/webp',
+            'svg': 'image/svg+xml',
+            'pdf': 'application/pdf',
+            'txt': 'text/plain',
+            'json': 'application/json',
+            'xml': 'application/xml',
+          };
+          if (ext && mimeMap[ext]) {
+            mimeType = mimeMap[ext];
+          }
+          
+          // Create a new blob with the correct MIME type
+          const blob = new Blob([responseBlob], { type: mimeType });
+          console.log('Decoded file:', { filename, mimeType, size: blob.size, isImage: mimeType.startsWith('image/') });
+          setDecodedFile({ blob, filename });
+          setPassword('');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If file mode didn't work, try text mode
+      const textFormData = new FormData();
+      textFormData.append('image', decodeImage);
+      textFormData.append('mode', 'text');
+      if (password) {
+        textFormData.append('password', password);
+      }
+
+      response = await fetch('/api/steganography/decode', {
+        method: 'POST',
+        body: textFormData,
       });
 
       if (response.ok) {
@@ -182,61 +252,14 @@ export default function Home() {
         if (contentType?.includes('application/json')) {
           const data = await response.json();
           setDecodedMessage(data.message);
-        } else {
-          const responseBlob = await response.blob();
-          const filename = response.headers.get('X-Original-Filename') || 'decoded-file';
-          
-          // Infer MIME type from filename extension if blob type is not set
-          let mimeType = responseBlob.type || contentType || 'application/octet-stream';
-          if (!responseBlob.type || responseBlob.type === 'application/octet-stream') {
-            const ext = filename.toLowerCase().split('.').pop();
-            const mimeMap: { [key: string]: string } = {
-              'jpg': 'image/jpeg',
-              'jpeg': 'image/jpeg',
-              'png': 'image/png',
-              'gif': 'image/gif',
-              'bmp': 'image/bmp',
-              'webp': 'image/webp',
-              'svg': 'image/svg+xml',
-              'pdf': 'application/pdf',
-              'txt': 'text/plain',
-              'json': 'application/json',
-              'xml': 'application/xml',
-            };
-            if (ext && mimeMap[ext]) {
-              mimeType = mimeMap[ext];
-            }
-          }
-          
-          // Create a new blob with the correct MIME type
-          const blob = new Blob([responseBlob], { type: mimeType });
-          setDecodedFile({ blob, filename });
-        }
-        setPassword('');
-      } else {
-        // Try text mode
-        const formData2 = new FormData();
-        formData2.append('image', decodeImage);
-        formData2.append('mode', 'text');
-        if (password) {
-          formData2.append('password', password);
-        }
-
-        response = await fetch('/api/steganography/decode', {
-          method: 'POST',
-          body: formData2,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setDecodedMessage(data.message);
           setPassword('');
-        } else {
-          const data = await response.json();
-          setError(data.error || 'Failed to decode');
         }
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to decode');
       }
     } catch (err) {
+      console.error('Decode error:', err);
       setError('An error occurred while decoding');
     } finally {
       setLoading(false);
@@ -596,21 +619,16 @@ export default function Home() {
                   </Label>
                   
                   {/* Show image preview if file is an image */}
-                  {decodedFile.blob.type.startsWith('image/') && (
+                  {decodedFile.blob.type.startsWith('image/') && decodedImageUrl && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="border border-green-300 dark:border-green-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900"
+                      className="border border-green-300 dark:border-green-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900 p-4"
                     >
                       <img
-                        src={URL.createObjectURL(decodedFile.blob)}
+                        src={decodedImageUrl}
                         alt={decodedFile.filename}
-                        className="w-full max-h-96 object-contain"
-                        onLoad={(e) => {
-                          // Clean up blob URL after image loads
-                          const img = e.target as HTMLImageElement;
-                          setTimeout(() => URL.revokeObjectURL(img.src), 100);
-                        }}
+                        className="w-full max-h-96 object-contain mx-auto"
                       />
                     </motion.div>
                   )}

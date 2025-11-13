@@ -54,7 +54,7 @@ export default class Steganography {
           bitIndex < data.length * 8
             ? (data[Math.floor(bitIndex / 8)] >> (7 - (bitIndex % 8))) & 1
             : crypto.randomInt(2);
-
+        // LSB Mask: 0xfe = 11111110
         outputBuffer[i + j] = (outputBuffer[i + j] & 0xfe) | bit;
         bitIndex++;
       }

@@ -26,10 +26,24 @@ export async function POST(request: NextRequest) {
     // Decode data
     let decodedData: string | Buffer;
     try {
-      if (password) {
-        decodedData = steganography.decodeWithEncryption(password, true) as Buffer;
+      if (mode === 'text') {
+        // For text mode, decode as string
+        if (password) {
+          decodedData = steganography.decodeWithEncryption(password, false) as string;
+        } else {
+          decodedData = steganography.decodeImage(false) as string;
+        }
+        return NextResponse.json({
+          message: decodedData,
+          success: true
+        });
       } else {
-        decodedData = steganography.decodeImage(true) as Buffer;
+        // For file mode, decode as binary
+        if (password) {
+          decodedData = steganography.decodeWithEncryption(password, true) as Buffer;
+        } else {
+          decodedData = steganography.decodeImage(true) as Buffer;
+        }
       }
     } catch (decodeError) {
       return NextResponse.json(
@@ -38,25 +52,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (mode === 'text') {
-      // Convert buffer to string
-      const message = new TextDecoder().decode(decodedData);
-      return NextResponse.json({
-        message: message,
-        success: true
-      });
-    } else {
-      // Extract filename and file data
+    // File mode handling
+    if (mode === 'file') {
       try {
         const dataBuffer = decodedData as Buffer;
         
-        // Read filename length (first 4 bytes)
         const filenameLength = dataBuffer.readUInt32BE(0);
-        
-        // Extract filename
         const filename = dataBuffer.slice(4, 4 + filenameLength).toString('utf-8');
-        
-        // Extract file data
         const fileData = dataBuffer.slice(4 + filenameLength);
 
         // Return the file as a blob
